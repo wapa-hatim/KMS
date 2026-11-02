@@ -62,21 +62,25 @@ export default function RoleDashboard({ role, documents, savedCount, memberCount
       ]
 
   return (
-    <section className={`role-dashboard role-${currentRole}`} aria-label={`${roleNames[currentRole]} dashboard`}>
-      <div className="role-dashboard-main">
-        <div className="role-dashboard-copy">
-          <div className="role-dashboard-eyebrow"><span className="role-indicator" />{copy.eyebrow}<span className="role-divider">/</span><span className="role-name">{roleNames[currentRole]}</span></div>
-          <h2>{copy.title}</h2>
-          <p>{copy.description}</p>
+    <>
+      <section className={`role-dashboard role-${currentRole}`} aria-label={`${roleNames[currentRole]} dashboard`}>
+        <div className="role-dashboard-main">
+          <div className="role-dashboard-copy">
+            <div className="role-dashboard-eyebrow"><span className="role-indicator" />{copy.eyebrow}<span className="role-divider">/</span><span className="role-name">{roleNames[currentRole]}</span></div>
+            <h2>{copy.title}</h2>
+            <p>{copy.description}</p>
+          </div>
+          {copy.action && <button className="role-dashboard-action" onClick={onCreate}><span><FileText size={16} /></span>{copy.action}<ArrowRight size={15} /></button>}
         </div>
-        {copy.action && <button className="role-dashboard-action" onClick={onCreate}><span><FileText size={16} /></span>{copy.action}<ArrowRight size={15} /></button>}
+        <div className="role-permission"><span className="permission-check"><ShieldCheck size={15} /></span><span><strong>Your access</strong>{copy.permission}</span></div>
+        <details className="permission-details">
+          <summary>Compare role permissions</summary>
+          <div className="permission-table-wrap"><table className="permission-table"><thead><tr><th>CAPABILITY</th><th>OWNER</th><th>EDITOR</th><th>READER</th></tr></thead><tbody>{permissions.map((permission) => <tr key={permission.label}><th scope="row">{permission.label}</th>{['owner', 'editor', 'viewer'].map((permissionRole) => <td key={permissionRole}>{permission[permissionRole] ? <Check size={15} aria-label="Allowed" /> : <span aria-label="Not allowed">-</span>}</td>)}</tr>)}</tbody></table></div>
+        </details>
+      </section>
+      <div className={`role-kpi-grid role-kpi-grid-${currentRole}`} aria-label={`${roleNames[currentRole]} key performance indicators`}>
+        {metrics.map(({ label, value, detail, icon: MetricIcon, tone }) => <article className={`role-kpi ${tone}`} key={label}><span className="role-kpi-icon"><MetricIcon size={17} /></span><span className="role-kpi-copy"><small>{label}</small><strong>{value}</strong><em>{detail}</em></span></article>)}
       </div>
-      <div className="role-kpi-grid">{metrics.map(({ label, value, detail, icon: MetricIcon, tone }) => <article className={`role-kpi ${tone}`} key={label}><span className="role-kpi-icon"><MetricIcon size={17} /></span><span className="role-kpi-copy"><small>{label}</small><strong>{value}</strong><em>{detail}</em></span></article>)}</div>
-      <div className="role-permission"><span className="permission-check"><ShieldCheck size={15} /></span><span><strong>Your access</strong>{copy.permission}</span></div>
-      <details className="permission-details">
-        <summary>Compare role permissions</summary>
-        <div className="permission-table-wrap"><table className="permission-table"><thead><tr><th>CAPABILITY</th><th>OWNER</th><th>EDITOR</th><th>READER</th></tr></thead><tbody>{permissions.map((permission) => <tr key={permission.label}><th scope="row">{permission.label}</th>{['owner', 'editor', 'viewer'].map((permissionRole) => <td key={permissionRole}>{permission[permissionRole] ? <Check size={15} aria-label="Allowed" /> : <span aria-label="Not allowed">-</span>}</td>)}</tr>)}</tbody></table></div>
-      </details>
-    </section>
+    </>
   )
 }

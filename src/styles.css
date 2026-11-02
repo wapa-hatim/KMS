@@ -360,8 +360,8 @@ h1 { margin: 11px 0 5px; color: #182b3f; font: 700 28px 'Poppins', sans-serif; l
 .role-dashboard-action { display: inline-flex; min-height: 32px; align-items: center; gap: 7px; padding: 0 9px; color: #45627a; border: 1px solid #e4e9ed; border-radius: 4px; background: #fff; font-size: 9px; white-space: nowrap; }
 .role-dashboard-action:hover { color: #24674f; background: #f5f8f6; }
 .role-dashboard-action > span { display: grid; place-items: center; }
-.role-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 18px 0 14px; }
-.role-kpi { display: flex; min-height: 92px; align-items: flex-start; gap: 10px; padding: 12px 11px; border: 1px solid #e8ecef; border-radius: 5px; background: #fcfdfd; }
+.role-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 13px 0 22px; }
+.role-kpi { display: flex; min-height: 104px; align-items: flex-start; gap: 11px; padding: 14px 13px; border: 1px solid #e3e9ec; border-radius: 5px; background: #fff; box-shadow: 0 2px 6px #18314908; }
 .role-kpi-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 5px; }
 .kpi-green .role-kpi-icon { color: #438269; background: #edf5f0; }
 .kpi-amber .role-kpi-icon { color: #a37c46; background: #f8f2e8; }
@@ -633,8 +633,8 @@ h1 { margin: 11px 0 5px; color: #182b3f; font: 700 28px 'Poppins', sans-serif; l
   .auth-panel { min-height: calc(100vh - 250px); padding: 18px 22px 14px; }
   .auth-form-wrap { max-width: 420px; padding: 29px 0; }
   .role-dashboard { margin-top: 19px; padding-right: 12px; padding-left: 12px; }
-  .role-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 14px 0 11px; }
-  .role-kpi { min-height: 79px; gap: 7px; padding: 9px 7px; }
+  .role-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 11px 0 17px; }
+  .role-kpi { min-height: 84px; gap: 7px; padding: 10px 8px; }
   .role-kpi-icon { width: 25px; height: 25px; }
   .role-kpi-copy small { font-size: 7px; }
   .role-kpi-copy strong { font-size: 19px; }
