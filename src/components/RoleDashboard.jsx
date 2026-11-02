@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Check, Clock3, FileText, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, BookOpen, Check, Clock3, FileText, ShieldCheck, Sparkles, UsersRound } from 'lucide-react'
 
 const roleCopy = {
   owner: {
@@ -31,12 +31,35 @@ const permissions = [
   { label: 'Manage workspace access', owner: true, editor: false, viewer: false },
 ]
 
-export default function RoleDashboard({ role, documents, savedCount, onCreate }) {
+export default function RoleDashboard({ role, documents, savedCount, memberCount, collectionsCount, reviewIntervalDays, onCreate }) {
   const currentRole = roleCopy[role] ? role : 'viewer'
   const copy = roleCopy[currentRole]
   const drafts = documents.filter((document) => document.status === 'Draft').length
   const inReview = documents.filter((document) => document.status === 'In review').length
   const published = documents.filter((document) => document.status === 'Published').length
+  const reviewDue = documents.filter((document) => document.status === 'Published' && (document.review_due_at ? new Date(document.review_due_at).getTime() <= Date.now() : Date.now() - new Date(document.updated_at).getTime() > reviewIntervalDays * 86400000)).length
+  const recentlyUpdated = documents.filter((document) => Date.now() - new Date(document.updated_at).getTime() < 30 * 86400000).length
+
+  const metrics = currentRole === 'owner'
+    ? [
+      { label: 'Published knowledge', value: published, detail: 'Available to readers', icon: BookOpen, tone: 'kpi-green' },
+      { label: 'In review', value: inReview, detail: 'Awaiting approval', icon: Clock3, tone: 'kpi-amber' },
+      { label: 'Review overdue', value: reviewDue, detail: `Beyond ${reviewIntervalDays}-day cadence`, icon: FileText, tone: 'kpi-rose' },
+      { label: 'Workspace members', value: memberCount, detail: 'Across this workspace', icon: UsersRound, tone: 'kpi-blue' },
+    ]
+    : currentRole === 'editor'
+      ? [
+        { label: 'Drafts in progress', value: drafts, detail: 'Ready to improve', icon: FileText, tone: 'kpi-blue' },
+        { label: 'In review', value: inReview, detail: 'Awaiting owner approval', icon: Clock3, tone: 'kpi-amber' },
+        { label: 'Published guides', value: published, detail: 'Available to readers', icon: Check, tone: 'kpi-green' },
+        { label: 'Review overdue', value: reviewDue, detail: `Beyond ${reviewIntervalDays}-day cadence`, icon: Sparkles, tone: 'kpi-rose' },
+      ]
+      : [
+        { label: 'Published to you', value: published, detail: 'Trusted workspace guides', icon: BookOpen, tone: 'kpi-green' },
+        { label: 'Saved for later', value: savedCount, detail: 'Your bookmarked pages', icon: Sparkles, tone: 'kpi-amber' },
+        { label: 'Collections', value: collectionsCount, detail: 'Browse by topic', icon: FileText, tone: 'kpi-blue' },
+        { label: 'Recently updated', value: recentlyUpdated, detail: 'Changed in the last 30 days', icon: Clock3, tone: 'kpi-rose' },
+      ]
 
   return (
     <section className={`role-dashboard role-${currentRole}`} aria-label={`${roleNames[currentRole]} dashboard`}>
@@ -48,21 +71,7 @@ export default function RoleDashboard({ role, documents, savedCount, onCreate })
         </div>
         {copy.action && <button className="role-dashboard-action" onClick={onCreate}><span><FileText size={16} /></span>{copy.action}<ArrowRight size={15} /></button>}
       </div>
-      <div className="role-metrics">
-        <div className="role-metric"><span className="metric-icon metric-blue"><BookOpen size={16} /></span><span><strong>{documents.length}</strong><small>Library documents</small></span></div>
-        {currentRole === 'owner' && <>
-          <div className="role-metric"><span className="metric-icon metric-amber"><Clock3 size={16} /></span><span><strong>{inReview}</strong><small>In review</small></span></div>
-          <div className="role-metric"><span className="metric-icon metric-green"><Check size={16} /></span><span><strong>{published}</strong><small>Published</small></span></div>
-        </>}
-        {currentRole === 'editor' && <>
-          <div className="role-metric"><span className="metric-icon metric-amber"><FileText size={16} /></span><span><strong>{drafts}</strong><small>Drafts to develop</small></span></div>
-          <div className="role-metric"><span className="metric-icon metric-green"><Check size={16} /></span><span><strong>{published}</strong><small>Published guides</small></span></div>
-        </>}
-        {currentRole === 'viewer' && <>
-          <div className="role-metric"><span className="metric-icon metric-green"><BookmarkIcon /></span><span><strong>{savedCount}</strong><small>Saved for later</small></span></div>
-          <div className="role-metric"><span className="metric-icon metric-amber"><Sparkles size={16} /></span><span><strong>{published}</strong><small>Published guides</small></span></div>
-        </>}
-      </div>
+      <div className="role-kpi-grid">{metrics.map(({ label, value, detail, icon: MetricIcon, tone }) => <article className={`role-kpi ${tone}`} key={label}><span className="role-kpi-icon"><MetricIcon size={17} /></span><span className="role-kpi-copy"><small>{label}</small><strong>{value}</strong><em>{detail}</em></span></article>)}</div>
       <div className="role-permission"><span className="permission-check"><ShieldCheck size={15} /></span><span><strong>Your access</strong>{copy.permission}</span></div>
       <details className="permission-details">
         <summary>Compare role permissions</summary>
@@ -70,8 +79,4 @@ export default function RoleDashboard({ role, documents, savedCount, onCreate })
       </details>
     </section>
   )
-}
-
-function BookmarkIcon() {
-  return <BookOpen size={16} />
 }

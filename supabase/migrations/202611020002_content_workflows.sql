@@ -94,8 +94,8 @@ declare
   workspace public.spaces%rowtype;
 begin
   select * into workspace from public.spaces where id = new.space_id;
-  if workspace.require_review and new.status <> 'Archived' then
-    new.review_due_at := coalesce(new.review_due_at, new.updated_at) + make_interval(days => workspace.review_interval_days);
+  if workspace.require_review and new.status = 'Published' then
+    new.review_due_at := now() + make_interval(days => workspace.review_interval_days);
   else
     new.review_due_at := null;
   end if;
@@ -104,6 +104,25 @@ end $$;
 
 create trigger documents_set_review_due before insert or update on public.documents
 for each row execute function public.refresh_document_review_due();
+
+create function public.guard_document_workflow_transition()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  if old.status is distinct from new.status
+    and new.status in ('Published', 'Archived')
+    and not public.has_space_role(new.space_id, array['owner']::public.space_role[]) then
+    raise exception 'Only workspace owners can publish or archive documents';
+  end if;
+  if old.status = 'Archived' and new.status <> 'Archived'
+    and not public.has_space_role(new.space_id, array['owner']::public.space_role[]) then
+    raise exception 'Only workspace owners can restore archived documents';
+  end if;
+  return new;
+end $$;
+
+create trigger documents_guard_workflow_transition before update of status on public.documents
+for each row execute function public.guard_document_workflow_transition();
 
 create table public.document_attachments (
   id uuid primary key default gen_random_uuid(),

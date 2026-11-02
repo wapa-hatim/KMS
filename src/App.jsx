@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
 import { CButton } from '@coreui/react'
 import {
   ArrowDownUp, ArrowRight, Bell, Bookmark, BookmarkCheck, BookOpen,
@@ -14,6 +13,9 @@ import AccountMenu from './components/AccountMenu.jsx'
 import SignOutDialog from './components/SignOutDialog.jsx'
 import WorkspaceAdmin from './components/WorkspaceAdmin.jsx'
 import WorkspaceReports from './components/WorkspaceReports.jsx'
+import CollectionManagerDialog from './components/CollectionManagerDialog.jsx'
+import DocumentEditorDialog from './components/DocumentEditorDialog.jsx'
+import DocumentReaderDialog from './components/DocumentReaderDialog.jsx'
 import { isSupabaseConfigured, supabase } from './lib/supabase.js'
 
 const AuthPage = lazy(() => import('./auth/AuthPage.jsx'))
@@ -28,18 +30,29 @@ const seedDocuments = [
   { id: 'd6', title: 'Research repository: interview notes', summary: 'Where research lives and how to keep participant notes organized.', category: 'Research', department: 'Design', updated_at: '2026-10-20T08:30:00Z', owner_name: 'Ethan Brooks', read_time: 4, status: 'Published', content: 'Store approved notes in the research repository. Use the project name and interview date in each entry, and remove direct identifiers before sharing broadly.\n\nLink observations to the research question and note whether a finding is a quote, an observation, or an interpretation.' },
 ]
 
-const categories = ['All collections', 'Playbooks', 'Guides', 'Operations', 'People', 'Research']
+const seedCollections = [
+  { id: 'demo-playbooks', name: 'Playbooks', description: 'Repeatable ways of working', parent_id: null },
+  { id: 'demo-guides', name: 'Guides', description: 'Practical team guidance', parent_id: null },
+  { id: 'demo-operations', name: 'Operations', description: 'How we run the business', parent_id: null },
+  { id: 'demo-people', name: 'People', description: 'People and culture resources', parent_id: null },
+  { id: 'demo-research', name: 'Research', description: 'Research notes and findings', parent_id: null },
+]
 const dateLabel = (value) => new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(value))
 
-function mapDocument(document) {
+function mapDocument(document, availableCollections = []) {
+  const collection = availableCollections.find((item) => item.id === document.collection_id)
   return {
     ...document,
+    category: collection?.name || document.category || 'General',
+    collection_name: collection?.name || document.category || 'General',
     summary: document.summary || '',
     department: document.department || 'Company-wide',
     owner_name: document.owner_name || 'Team member',
     read_time: document.read_time || 5,
     status: document.status || 'Published',
     content: document.content || '',
+    tags: document.tags || [],
+    attachments: document.attachments || [],
   }
 }
 
@@ -49,12 +62,20 @@ function IconButton({ label, className = '', children, ...props }) {
 
 function App() {
   const [documents, setDocuments] = useState(seedDocuments)
+  const [collections, setCollections] = useState(seedCollections)
   const [activeSection, setActiveSection] = useState('library')
   const [activeCategory, setActiveCategory] = useState('All collections')
   const [activeView, setActiveView] = useState('All knowledge')
   const [query, setQuery] = useState('')
   const [selectedDocument, setSelectedDocument] = useState(null)
-  const [createOpen, setCreateOpen] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorDocument, setEditorDocument] = useState(null)
+  const [collectionsOpen, setCollectionsOpen] = useState(false)
+  const [collectionSaving, setCollectionSaving] = useState(false)
+  const [documentSaving, setDocumentSaving] = useState(false)
+  const [documentAttachments, setDocumentAttachments] = useState([])
+  const [documentVersions, setDocumentVersions] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const { session, loading: sessionLoading, recoveryRequired, setRecoveryRequired } = useSupabaseSession()
@@ -75,6 +96,7 @@ function App() {
   const [oldestFirst, setOldestFirst] = useState(false)
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(isSupabaseConfigured)
+  const categories = useMemo(() => ['All collections', ...collections.map((collection) => collection.name)], [collections])
 
   useEffect(() => {
     if (!supabase || !session || !pendingInviteToken) return undefined
@@ -101,6 +123,7 @@ function App() {
       setSpaceId(null)
       setRole('owner')
       setDocuments(seedDocuments)
+      setCollections(seedCollections)
       setRequireReview(true)
       setMembers([
         { user_id: 'demo-maya', role: 'owner', full_name: 'Maya Chen', email: 'maya@northstar.example', created_at: '2026-03-10T12:00:00Z' },
@@ -114,6 +137,7 @@ function App() {
     if (!session) {
       setSpaceId(null)
       setDocuments([])
+      setCollections([])
       setMembers([])
       setInvitations([])
       setAuditEvents([])
@@ -141,23 +165,25 @@ function App() {
       setSpaceName(space?.name || 'Knowledge workspace')
       setRequireReview(space?.require_review ?? true)
       setReviewIntervalDays(space?.review_interval_days || 180)
-      const { data, error: documentsError } = await supabase.from('documents')
-        .select('id,title,summary,content,category,department,updated_at,owner_name,read_time,status')
-        .eq('space_id', membership.space_id)
-        .order('updated_at', { ascending: false })
+      const [collectionResult, documentResult] = await Promise.all([
+        supabase.from('collections').select('id,name,description,parent_id,created_at').eq('space_id', membership.space_id).is('archived_at', null).order('name'),
+        supabase.from('documents').select('id,title,summary,content,category,department,updated_at,owner_name,read_time,status,collection_id,owner_id,tags,template_key,content_format,review_due_at').eq('space_id', membership.space_id).order('updated_at', { ascending: false }),
+      ])
       if (!active) return
+      const collectionRows = collectionResult.data || []
+      setCollections(collectionRows)
+      const { data, error: documentsError } = documentResult
       if (documentsError) {
         setDocuments([])
         setToast('Could not load your documents. Check your space permissions and try again.')
       } else {
-        const mappedDocuments = (data || []).map(mapDocument)
-        setDocuments(mappedDocuments)
-        const [memberResult, auditResult, invitationResult] = await Promise.all([
+        const [memberResult, auditResult, invitationResult, attachmentResult] = await Promise.all([
           supabase.from('space_members').select('user_id,role,created_at').eq('space_id', membership.space_id),
           supabase.from('audit_events').select('id,action,document_id,actor_id,created_at').eq('space_id', membership.space_id).order('created_at', { ascending: false }).limit(100),
           membership.role === 'owner'
             ? supabase.from('space_invitations').select('id,invited_email,role,created_at,expires_at').eq('space_id', membership.space_id).is('accepted_at', null).order('created_at', { ascending: false })
             : Promise.resolve({ data: [], error: null }),
+          supabase.from('document_attachments').select('id,document_id,storage_path,file_name,mime_type,byte_size,created_at').eq('space_id', membership.space_id).order('created_at', { ascending: false }),
         ])
         if (!active) return
         const memberRows = memberResult.data || []
@@ -167,6 +193,14 @@ function App() {
         const profilesByUser = new Map((profileResult.data || []).map((profile) => [profile.user_id, profile]))
         setMembers(memberRows.map((member) => ({ ...member, ...profilesByUser.get(member.user_id) })))
         setInvitations(invitationResult.data || [])
+        const attachmentsByDocument = new Map()
+        ;(attachmentResult.data || []).forEach((attachment) => attachmentsByDocument.set(attachment.document_id, [...(attachmentsByDocument.get(attachment.document_id) || []), attachment]))
+        const documentsWithAttachments = (data || []).map((document) => ({ ...document, attachments: attachmentsByDocument.get(document.id) || [] }))
+        const mappedDocuments = documentsWithAttachments.map((document) => {
+          const owner = profilesByUser.get(document.owner_id)
+          return mapDocument({ ...document, owner_name: owner?.full_name || document.owner_name }, collectionRows)
+        })
+        setDocuments(mappedDocuments)
         const titlesByDocument = new Map(mappedDocuments.map((document) => [document.id, document.title]))
         setAuditEvents((auditResult.data || []).map((event) => ({ ...event, document_title: titlesByDocument.get(event.document_id) || 'Workspace document' })))
       }
@@ -200,7 +234,7 @@ function App() {
       const matchesCategory = activeCategory === 'All collections' || document.category === activeCategory
       const matchesView = activeView !== 'My bookmarks' || savedIds.includes(document.id)
       const matchesRecent = activeView !== 'Recently viewed' || recentIds.includes(document.id)
-      const matchesSearch = !normalizedQuery || [document.title, document.summary, document.content, document.category, document.department, document.owner_name].some((value) => value?.toLowerCase().includes(normalizedQuery))
+      const matchesSearch = !normalizedQuery || [document.title, document.summary, document.content, document.category, document.department, document.owner_name, ...(document.tags || [])].some((value) => value?.toLowerCase().includes(normalizedQuery))
       return matchesCategory && matchesView && matchesRecent && matchesSearch
     })
       .sort((left, right) => {
@@ -212,45 +246,236 @@ function App() {
 
   const toggleSaved = (id) => setSavedIds((current) => current.includes(id) ? current.filter((savedId) => savedId !== id) : [...current, id])
 
-  async function createDocument(event) {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const draft = {
-      title: formData.get('title').toString().trim(),
-      summary: formData.get('summary').toString().trim(),
-      category: formData.get('category').toString(),
-      department: formData.get('department').toString().trim() || 'Company-wide',
-      content: formData.get('content').toString().trim(),
-      status: 'Draft',
-      read_time: Math.max(1, Math.ceil(formData.get('content').toString().trim().split(/\s+/).length / 200)),
-    }
-    if (role === 'viewer') {
-      setToast('Your reader role does not allow creating documents.')
+  async function saveDocument(form) {
+    if (!canCreateDocuments) {
+      setToast('Your reader role does not allow editing documents.')
       return
     }
+    const collection = collections.find((item) => item.id === form.collectionId)
+    const owner = members.find((member) => member.user_id === form.ownerId)
+    const fields = {
+      title: form.title.trim(),
+      summary: form.summary.trim(),
+      collection_id: form.collectionId,
+      category: collection?.name || 'General',
+      department: form.department.trim() || 'Company-wide',
+      owner_id: form.ownerId || null,
+      owner_name: owner?.full_name || owner?.email || 'Team member',
+      tags: form.tags,
+      template_key: form.templateKey,
+      content_format: 'markdown',
+      content: form.content.trim(),
+      read_time: form.read_time,
+    }
+    setDocumentSaving(true)
+    let savedDocument
+    let filesToUpload = form.files
+
     if (isSupabaseConfigured && session) {
       if (!spaceId) {
+        setDocumentSaving(false)
         setToast('This account is not assigned to a workspace yet.')
         return
       }
-      const { data, error } = await supabase.from('documents').insert({
-        ...draft,
-        space_id: spaceId,
-        created_by: session.user.id,
-        owner_name: session.user.user_metadata?.full_name || session.user.email,
-      }).select('id,title,summary,content,category,department,updated_at,owner_name,read_time,status').single()
+      const documentId = editorDocument?.id || crypto.randomUUID()
+      const query = editorDocument
+        ? supabase.from('documents').update(fields).eq('space_id', spaceId).eq('id', documentId)
+        : supabase.from('documents').insert({ id: documentId, ...fields, space_id: spaceId, created_by: session.user.id, status: 'Draft' })
+      const { data, error } = await query.select('id,title,summary,content,category,department,updated_at,owner_name,read_time,status,collection_id,owner_id,tags,template_key,content_format,review_due_at').single()
       if (error) {
-        setToast(`Couldn't create document: ${error.message}`)
+        setDocumentSaving(false)
+        setToast(`Could not save document: ${error.message}`)
         return
       }
-      setDocuments((current) => [mapDocument(data), ...current])
+      savedDocument = mapDocument(data, collections)
+      setDocuments((current) => current.some((item) => item.id === savedDocument.id)
+        ? current.map((item) => item.id === savedDocument.id ? savedDocument : item)
+        : [savedDocument, ...current])
+
+      for (const file of filesToUpload) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const storagePath = `${spaceId}/${documentId}/${crypto.randomUUID()}-${safeName}`
+        const { error: uploadError } = await supabase.storage.from('kms-documents').upload(storagePath, file, { contentType: file.type, upsert: false })
+        if (uploadError) {
+          setToast(`Document saved, but ${file.name} could not be uploaded: ${uploadError.message}`)
+          setEditorDocument(savedDocument)
+          setDocumentSaving(false)
+          return
+        }
+        const { data: attachment, error: attachmentError } = await supabase.from('document_attachments').insert({
+          space_id: spaceId,
+          document_id: documentId,
+          storage_path: storagePath,
+          file_name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          byte_size: file.size,
+          uploaded_by: session.user.id,
+        }).select('id,document_id,storage_path,file_name,mime_type,byte_size,created_at').single()
+        if (attachmentError) {
+          await supabase.storage.from('kms-documents').remove([storagePath])
+          setToast(`Document saved, but attachment details could not be recorded: ${attachmentError.message}`)
+          setEditorDocument(savedDocument)
+          setDocumentSaving(false)
+          return
+        }
+        savedDocument = { ...savedDocument, attachments: [...(savedDocument.attachments || []), attachment] }
+      }
     } else {
-      setDocuments((current) => [{ ...draft, id: `local-${Date.now()}`, updated_at: new Date().toISOString(), owner_name: 'You' }, ...current])
+      const now = new Date().toISOString()
+      const demoAttachments = filesToUpload.map((file) => ({
+        id: `demo-file-${Date.now()}-${file.name}`,
+        file_name: file.name,
+        mime_type: file.type,
+        byte_size: file.size,
+        local_url: URL.createObjectURL(file),
+      }))
+      savedDocument = mapDocument({
+        ...editorDocument,
+        ...fields,
+        id: editorDocument?.id || `local-${Date.now()}`,
+        updated_at: now,
+        owner_name: owner?.full_name || owner?.email || 'You',
+        attachments: [...(editorDocument?.attachments || []), ...demoAttachments],
+        status: editorDocument?.status || 'Draft',
+      }, collections)
     }
-    setCreateOpen(false)
+
+    setDocuments((current) => current.some((document) => document.id === savedDocument.id)
+      ? current.map((document) => document.id === savedDocument.id ? savedDocument : document)
+      : [savedDocument, ...current])
+    if (selectedDocument?.id === savedDocument.id) setSelectedDocument(savedDocument)
+    setEditorDocument(null)
+    setEditorOpen(false)
+    setActiveSection('library')
     setActiveCategory('All collections')
     setActiveView('All knowledge')
-    setToast('Draft created and ready to edit.')
+    setDocumentSaving(false)
+    setToast(editorDocument ? 'Document changes saved.' : 'Draft created and ready to edit.')
+  }
+
+  async function createCollection({ name, description, parentId }) {
+    setCollectionSaving(true)
+    if (isSupabaseConfigured && session && spaceId) {
+      const { data, error } = await supabase.from('collections').insert({ space_id: spaceId, name, description, parent_id: parentId, created_by: session.user.id }).select('id,name,description,parent_id,created_at').single()
+      if (error) {
+        setCollectionSaving(false)
+        setToast(`Could not create collection: ${error.message}`)
+        return false
+      }
+      setCollections((current) => [...current, data].sort((left, right) => left.name.localeCompare(right.name)))
+    } else {
+      setCollections((current) => [...current, { id: `demo-collection-${Date.now()}`, name, description, parent_id: parentId }].sort((left, right) => left.name.localeCompare(right.name)))
+    }
+    setCollectionSaving(false)
+    setToast(`Collection “${name}” created.`)
+    return true
+  }
+
+  async function renameCollection(collectionId, name) {
+    if (isSupabaseConfigured && session) {
+      const { error } = await supabase.from('collections').update({ name }).eq('space_id', spaceId).eq('id', collectionId)
+      if (error) {
+        setToast(`Could not rename collection: ${error.message}`)
+        return false
+      }
+    }
+    setCollections((current) => current.map((collection) => collection.id === collectionId ? { ...collection, name } : collection))
+    setDocuments((current) => current.map((document) => document.collection_id === collectionId ? { ...document, category: name, collection_name: name } : document))
+    setToast('Collection renamed.')
+    return true
+  }
+
+  async function archiveCollection(collection) {
+    if (collections.some((item) => item.parent_id === collection.id)) {
+      setToast('Archive or move nested collections first.')
+      return
+    }
+    if (!window.confirm(`Archive “${collection.name}”? Its documents will remain in the full library.`)) return
+    if (isSupabaseConfigured && session) {
+      const { error } = await supabase.from('collections').update({ archived_at: new Date().toISOString() }).eq('space_id', spaceId).eq('id', collection.id)
+      if (error) {
+        setToast(`Could not archive collection: ${error.message}`)
+        return
+      }
+    }
+    setCollections((current) => current.filter((item) => item.id !== collection.id))
+    if (activeCategory === collection.name) setActiveCategory('All collections')
+    setToast(`Collection “${collection.name}” archived.`)
+  }
+
+  async function openDocument(document) {
+    setSelectedDocument(document)
+    setDocumentAttachments(document.attachments || [])
+    setDocumentVersions([])
+    setHistoryLoading(Boolean(supabase && session))
+    if (!supabase || !session) {
+      setDocumentVersions(document.demo_versions || [])
+      setHistoryLoading(false)
+      return
+    }
+    const [attachmentResult, versionResult] = await Promise.all([
+      supabase.from('document_attachments').select('id,document_id,storage_path,file_name,mime_type,byte_size,created_at').eq('space_id', spaceId).eq('document_id', document.id).order('created_at', { ascending: false }),
+      supabase.from('document_versions').select('id,version,title,summary,content,changed_by,created_at,status,collection_id,owner_id,tags,content_format').eq('document_id', document.id).order('version', { ascending: false }),
+    ])
+    setDocumentAttachments(attachmentResult.data || [])
+    setDocumentVersions(versionResult.data || [])
+    setHistoryLoading(false)
+  }
+
+  async function downloadAttachment(attachment) {
+    if (attachment.local_url) {
+      window.open(attachment.local_url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const { data, error } = await supabase.storage.from('kms-documents').createSignedUrl(attachment.storage_path, 60)
+    if (error) {
+      setToast(`Could not open attachment: ${error.message}`)
+      return
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  async function updateDocumentStatus(status) {
+    if (!selectedDocument) return
+    setDocumentSaving(true)
+    if (supabase && session) {
+      const { data, error } = await supabase.from('documents').update({ status }).eq('space_id', spaceId).eq('id', selectedDocument.id).select('id,title,summary,content,category,department,updated_at,owner_name,read_time,status,collection_id,owner_id,tags,template_key,content_format,review_due_at').single()
+      if (error) {
+        setDocumentSaving(false)
+        setToast(`Could not update document workflow: ${error.message}`)
+        return
+      }
+      const updated = mapDocument({ ...data, attachments: documentAttachments }, collections)
+      setSelectedDocument(updated)
+      setDocuments((current) => current.map((document) => document.id === updated.id ? updated : document))
+    } else {
+      const updated = { ...selectedDocument, status, updated_at: new Date().toISOString() }
+      setSelectedDocument(updated)
+      setDocuments((current) => current.map((document) => document.id === updated.id ? updated : document))
+    }
+    setDocumentSaving(false)
+    setToast(`Document moved to ${status.toLowerCase()}.`)
+  }
+
+  async function restoreDocumentVersion(version) {
+    if (!selectedDocument) return false
+    const fields = { title: version.title, summary: version.summary, content: version.content, status: version.status, collection_id: version.collection_id, owner_id: version.owner_id, tags: version.tags, content_format: version.content_format }
+    if (supabase && session) {
+      const { data, error } = await supabase.from('documents').update(fields).eq('space_id', spaceId).eq('id', selectedDocument.id).select('id,title,summary,content,category,department,updated_at,owner_name,read_time,status,collection_id,owner_id,tags,template_key,content_format,review_due_at').single()
+      if (error) {
+        setToast(`Could not restore version: ${error.message}`)
+        return false
+      }
+      const restored = mapDocument({ ...data, attachments: documentAttachments }, collections)
+      setSelectedDocument(restored)
+      setDocuments((current) => current.map((document) => document.id === restored.id ? restored : document))
+    } else {
+      const restored = { ...selectedDocument, ...fields, updated_at: new Date().toISOString() }
+      setSelectedDocument(restored)
+      setDocuments((current) => current.map((document) => document.id === restored.id ? restored : document))
+    }
+    setToast('Revision restored as the current document version.')
+    return true
   }
 
   const canCreateDocuments = role === 'owner' || role === 'editor'
@@ -425,9 +650,9 @@ function App() {
           </nav>
         </>}
 
-        <div className="collection-heading"><p className="nav-label">COLLECTIONS</p><IconButton label="Create collection" onClick={() => setToast('Collection management is coming soon.')}><Plus size={15} /></IconButton></div>
+        <div className="collection-heading"><p className="nav-label">COLLECTIONS</p>{canCreateDocuments && <IconButton label="Manage collections" onClick={() => setCollectionsOpen(true)}><Plus size={15} /></IconButton>}</div>
         <nav className="collection-nav" aria-label="Collections">
-          {categories.slice(1).map((category, index) => <button key={category} className={`nav-item ${activeCategory === category ? 'active' : ''}`} onClick={() => { setActiveCategory(category); setActiveView('All knowledge') }}><span className={`collection-dot dot-${index}`} />{category}<ChevronRight className="nav-chevron" size={14} /></button>)}
+          {collections.map((collection, index) => <button key={collection.id} className={`nav-item ${activeCategory === collection.name ? 'active' : ''}`} style={{ paddingLeft: collection.parent_id ? 24 : undefined }} onClick={() => { setActiveSection('library'); setActiveCategory(collection.name); setActiveView('All knowledge') }}><span className={`collection-dot dot-${index % 5}`} />{collection.name}<ChevronRight className="nav-chevron" size={14} /></button>)}
         </nav>
 
         <div className="sidebar-bottom">
@@ -457,10 +682,10 @@ function App() {
               <h1>{activeView === 'My bookmarks' ? 'Your bookmarks' : activeCategory === 'All collections' ? 'Knowledge library' : activeCategory}</h1>
               <p className="page-subtitle">A considered home for the ideas, answers, and work that move us forward.</p>
             </div>
-            {canCreateDocuments && <CButton className="create-button" onClick={() => setCreateOpen(true)}><Plus size={17} />New document</CButton>}
+            {canCreateDocuments && <CButton className="create-button" onClick={() => { setEditorDocument(null); setEditorOpen(true) }}><Plus size={17} />New document</CButton>}
           </div>
 
-          <RoleDashboard role={role} documents={documents} savedCount={savedIds.length} onCreate={() => setCreateOpen(true)} />
+          <RoleDashboard role={role} documents={documents} savedCount={savedIds.length} memberCount={members.length} collectionsCount={collections.length} reviewIntervalDays={reviewIntervalDays} onCreate={() => { setEditorDocument(null); setEditorOpen(true) }} />
 
           <div className="insight-strip">
             <div className="insight-icon"><Sparkles size={17} /></div>
@@ -482,7 +707,7 @@ function App() {
           <div className="document-list" aria-live="polite">
             <div className="list-header"><span>DOCUMENT</span><span>COLLECTION</span><span>OWNER</span><span>LAST UPDATED</span><span aria-label="Actions" /></div>
             {loading ? <div className="empty-state"><span className="loading-spinner" />Loading your knowledge library...</div> : filteredDocuments.length ? filteredDocuments.map((document) => <article className="document-row" key={document.id}>
-              <button className="document-main" onClick={() => { setRecentIds((current) => [document.id, ...current.filter((id) => id !== document.id)]); setSelectedDocument(document) }}>
+              <button className="document-main" onClick={() => { setRecentIds((current) => [document.id, ...current.filter((id) => id !== document.id)]); openDocument(document) }}>
                 <span className={`file-icon file-${document.category.toLowerCase().replace(/\s+/g, '-')}`}><FileText size={18} /></span>
                 <span className="document-copy"><strong>{document.title}</strong><small>{document.summary}</small></span>
               </button>
@@ -522,29 +747,24 @@ function App() {
           : <section className="page-content access-denied"><ShieldCheck size={22} /><h1>Owner access required</h1><p>Your workspace role doesn’t allow member or settings administration.</p><button className="admin-primary-button" onClick={() => setActiveSection('library')}>Return to knowledge library</button></section>)}
       </main>
 
-      <Dialog.Root open={createOpen} onOpenChange={setCreateOpen}>
-        <Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="dialog-content">
-          <div className="dialog-heading"><div><span className="dialog-kicker">KNOWLEDGE LIBRARY</span><Dialog.Title>New document</Dialog.Title><Dialog.Description>Start with the context your teammates will need.</Dialog.Description></div><Dialog.Close asChild><IconButton label="Close dialog"><X size={18} /></IconButton></Dialog.Close></div>
-          <form className="document-form" onSubmit={createDocument}>
-            <label>Title<input name="title" placeholder="e.g. How we run customer interviews" required maxLength={120} autoFocus /></label>
-            <label>Short description<input name="summary" placeholder="What will someone find in this document?" required maxLength={180} /></label>
-            <div className="form-two-col"><label>Collection<select name="category" defaultValue="Guides">{categories.slice(1).map((category) => <option key={category}>{category}</option>)}</select></label><label>Department<input name="department" placeholder="Company-wide" maxLength={60} /></label></div>
-            <label>First notes<textarea name="content" placeholder="Capture the key steps, decisions, or context..." rows="5" required /></label>
-            <div className="form-footer"><span><ShieldCheck size={14} />Private to your workspace</span><div><Dialog.Close asChild><button type="button" className="secondary-button">Cancel</button></Dialog.Close><CButton type="submit" className="create-button"><Plus size={16} />Create draft</CButton></div></div>
-          </form>
-        </Dialog.Content></Dialog.Portal>
-      </Dialog.Root>
-
-      <Dialog.Root open={Boolean(selectedDocument)} onOpenChange={(open) => !open && setSelectedDocument(null)}>
-        <Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="dialog-content document-dialog">
-          {selectedDocument && <>
-            <div className="dialog-heading"><div><span className="dialog-kicker">{selectedDocument.category.toUpperCase()} <span>/</span> {selectedDocument.status.toUpperCase()}</span><Dialog.Title>{selectedDocument.title}</Dialog.Title><Dialog.Description>{selectedDocument.summary}</Dialog.Description></div><Dialog.Close asChild><IconButton label="Close document"><X size={18} /></IconButton></Dialog.Close></div>
-            <div className="document-meta"><span className="owner-avatar">{selectedDocument.owner_name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span><strong>{selectedDocument.owner_name}</strong><span>Updated {dateLabel(selectedDocument.updated_at)}</span><span><Clock3 size={14} />{selectedDocument.read_time} min read</span></div>
-            <div className="document-body">{selectedDocument.content.split('\n\n').map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>
-            <div className="document-dialog-footer"><span><ShieldCheck size={14} />Workspace only</span><button className="secondary-button" onClick={() => toggleSaved(selectedDocument.id)}>{savedIds.includes(selectedDocument.id) ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}{savedIds.includes(selectedDocument.id) ? 'Saved' : 'Save for later'}</button></div>
-          </>}
-        </Dialog.Content></Dialog.Portal>
-      </Dialog.Root>
+      <CollectionManagerDialog open={collectionsOpen} onOpenChange={setCollectionsOpen} collections={collections} saving={collectionSaving} onCreate={createCollection} onRename={renameCollection} onArchive={archiveCollection} />
+      <DocumentEditorDialog open={editorOpen} onOpenChange={setEditorOpen} document={editorDocument} collections={collections} members={members} saving={documentSaving} onSave={saveDocument} onManageCollections={() => setCollectionsOpen(true)} />
+      <DocumentReaderDialog
+        document={selectedDocument}
+        canEdit={canCreateDocuments}
+        canPublish={role === 'owner'}
+        attachments={documentAttachments}
+        versions={documentVersions}
+        loadingHistory={historyLoading}
+        saving={documentSaving}
+        saved={savedIds.includes(selectedDocument?.id)}
+        onOpenChange={(open) => { if (!open) setSelectedDocument(null) }}
+        onEdit={() => { setEditorDocument(selectedDocument); setSelectedDocument(null); setEditorOpen(true) }}
+        onToggleSaved={() => toggleSaved(selectedDocument?.id)}
+        onDownload={downloadAttachment}
+        onStatusChange={updateDocumentStatus}
+        onRestore={restoreDocumentVersion}
+      />
 
       <SignOutDialog open={logoutOpen} onOpenChange={setLogoutOpen} onConfirm={confirmSignOut} loading={signingOut} />
 

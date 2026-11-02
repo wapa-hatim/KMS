@@ -23,7 +23,7 @@ export default function WorkspaceReports({ documents, auditEvents, memberCount, 
     const published = documents.filter((item) => item.status === 'Published').length
     const inReview = documents.filter((item) => item.status === 'In review').length
     const drafts = documents.filter((item) => item.status === 'Draft').length
-    const stale = requireReview ? documents.filter((item) => item.status !== 'In review' && now - new Date(item.updated_at).getTime() > threshold).length : 0
+    const stale = requireReview ? documents.filter((item) => item.status === 'Published' && (item.review_due_at ? new Date(item.review_due_at).getTime() <= now : now - new Date(item.updated_at).getTime() > threshold)).length : 0
     const recentEvents = auditEvents.filter((item) => new Date(item.created_at).getTime() >= monthAgo)
     const collections = Object.entries(documents.reduce((counts, item) => ({ ...counts, [item.category]: (counts[item.category] || 0) + 1 }), {}))
       .sort((left, right) => right[1] - left[1])
