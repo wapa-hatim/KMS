@@ -11,7 +11,7 @@ npm run dev
 
 ## Supabase setup
 
-1. Create a Supabase project and run [`supabase/schema.sql`](supabase/schema.sql), followed by [`supabase/migrations/202611020001_workspace_admin.sql`](supabase/migrations/202611020001_workspace_admin.sql) and [`supabase/migrations/202611020002_content_workflows.sql`](supabase/migrations/202611020002_content_workflows.sql), in that order, in its SQL editor.
+1. Create a Supabase project and run [`supabase/schema.sql`](supabase/schema.sql), followed by [`supabase/migrations/202611020001_workspace_admin.sql`](supabase/migrations/202611020001_workspace_admin.sql), [`supabase/migrations/202611020002_content_workflows.sql`](supabase/migrations/202611020002_content_workflows.sql), and [`supabase/migrations/202611020003_reports_access.sql`](supabase/migrations/202611020003_reports_access.sql), in that order, in its SQL editor.
 2. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 3. Add your local and deployed app origins to Supabase Auth's allowed redirect URLs. Invitation links return to `/?invite=...` on that origin.
 4. Start the app and create an account with your work email. Confirm your email, then create a space and owner membership for the authenticated user's UUID in the SQL editor before accessing documents:
@@ -37,7 +37,7 @@ Owners can invite readers and editors from **People & access**. Supabase sends a
 
 Documents support Markdown/GFM authoring, live preview, SOP/post-mortem/design/FAQ templates, tags, collection selection, owner assignment, and up to 50 MB per attachment. Attachments use the private `kms-documents` bucket with signed downloads. Document readers can review diffs and restore earlier snapshots. Editors create drafts and submit them for review; owners publish/archive. Collections support nesting, rename, and archive.
 
-The current search UI still filters loaded documents locally; the database full-text RPC is available for the next search-pagination integration. OCR/attachment text extraction, inline real-time co-editing/comments/mentions, SSO provider setup, RAG, and usage/search analytics require additional services or follow-up work. Supabase migrations need to be applied and tested against the target project before production deployment.
+Reports are available only to owners and editors; the final migration applies the same restriction to audit-event reads through row-level security. The current search UI still filters loaded documents locally; the database full-text RPC is available for the next search-pagination integration. OCR/attachment text extraction, inline real-time co-editing/comments/mentions, SSO provider setup, RAG, and usage/search analytics require additional services or follow-up work. Supabase migrations need to be applied and tested against the target project before production deployment.
 
 ## Stack
 

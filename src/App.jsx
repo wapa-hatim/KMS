@@ -637,10 +637,12 @@ function App() {
           <button className={`nav-item ${activeSection === 'library' && activeView === 'Recently viewed' ? 'active' : ''}`} onClick={() => { setActiveSection('library'); setActiveView('Recently viewed') }}><Clock3 size={17} />Recently viewed</button>
         </nav>
 
-        <p className="nav-label secondary-nav-label">INSIGHTS</p>
-        <nav className="primary-nav" aria-label="Reports navigation">
-          <button className={`nav-item ${activeSection === 'reports' ? 'active' : ''}`} onClick={() => setActiveSection('reports')}><ChartNoAxesColumn size={17} />Reports & analytics</button>
-        </nav>
+        {role !== 'viewer' && <>
+          <p className="nav-label secondary-nav-label">INSIGHTS</p>
+          <nav className="primary-nav" aria-label="Reports navigation">
+            <button className={`nav-item ${activeSection === 'reports' ? 'active' : ''}`} onClick={() => setActiveSection('reports')}><ChartNoAxesColumn size={17} />Reports & analytics</button>
+          </nav>
+        </>}
 
         {role === 'owner' && <>
           <p className="nav-label secondary-nav-label">ADMINISTRATION</p>
@@ -723,7 +725,9 @@ function App() {
           <section className="bottom-note"><div><div className="bottom-note-icon"><LifeBuoy size={17} /></div><div><strong>Can’t find what you’re looking for?</strong><span>Ask your team or create a request for a new guide.</span></div></div><button onClick={() => setToast('Your request has been noted.')}>Request knowledge <ArrowRight size={14} /></button></section>
         </section>}
 
-        {activeSection === 'reports' && <WorkspaceReports documents={documents} auditEvents={auditEvents} memberCount={members.length} requireReview={requireReview} reviewIntervalDays={reviewIntervalDays} />}
+        {activeSection === 'reports' && (role !== 'viewer'
+          ? <WorkspaceReports documents={documents} auditEvents={auditEvents} memberCount={members.length} requireReview={requireReview} reviewIntervalDays={reviewIntervalDays} />
+          : <section className="page-content access-denied"><ShieldCheck size={22} /><h1>Reports are restricted</h1><p>Workspace reports are available to owners and editors.</p><button className="admin-primary-button" onClick={() => setActiveSection('library')}>Return to knowledge library</button></section>)}
         {(activeSection === 'people' || activeSection === 'settings') && (role === 'owner'
           ? <WorkspaceAdmin
             activeTab={activeSection}
